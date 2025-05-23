@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package comunicacion;
+
+option go_package = "grpc-server/proto";
+
+enum EstadoEntrenador {
+  ACTIVO = 0;
+  SUSPENDIDO = 1;
+  EXPULSADO = 2;
+}
+
+message Entrenador{
+    int32 id = 1;
+    string nombre = 2;
+    string region = 3;
+    int32 ranking = 4;
+    string estado = 5;
+    int32 suspension = 6;
+    
+}
+
+message Torneo{
+    int64 idTorneo = 1;
+    string region = 2;
+    repeated Entrenador jugadores = 3;
+    string estado = 5;
+    int32 inscritos = 6;
+
+}
+
+
+message ListaTorneos{
+    repeated Torneo torneos = 1;
+}
+
+message ListaEntrenadores{
+    repeated Entrenador entrenadores = 1;
+}
+
+message Respuesta{
+    string mensaje = 1;
+}
+
+message InscribirRequest{
+    Entrenador entrenador = 1;
+    int64 idTorneo = 2;
+}
+
+
+message InscribirResponse{
+    string mensaje = 1;
+    Entrenador en = 2;
+}
+
+
+
+// para los combates
+message Combate {
+    int64 idCombate = 1;
+    Torneo idTorneo = 2;
+    Entrenador entrenador1 = 3;
+    Entrenador entrenador2 = 4;
+}
+
+message ResultadoCombate {
+    int64 idCombate = 1;
+    int32 idGanador = 2;
+    string resumen = 3;
+}
+
+
+message EntrenadorID {
+    int32 id = 1;
+}
+
+service Comunicacion{
+    rpc EnviarEntrenadores(ListaEntrenadores) returns (Respuesta);
+    rpc EnviarTorneos(empty) returns (ListaTorneos);
+    rpc InscribirEntrenador(InscribirRequest) returns (InscribirResponse);
+    rpc AsignarCombate(Combate) returns (Respuesta);
+    rpc ConsultarEntrenador(EntrenadorID) returns (Entrenador);
+}
+
+message empty{}
