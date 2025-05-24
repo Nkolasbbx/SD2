@@ -1,0 +1,49 @@
+# Archivo: Makefile
+
+# Variables
+COMPOSE=docker-compose
+YML_FILE=docker-compose.yml
+
+# Comandos principales
+up:
+	$(COMPOSE) -f $(YML_FILE) up --build
+
+down:
+	$(COMPOSE) -f $(YML_FILE) down
+
+restart:
+	$(MAKE) down
+	$(MAKE) up
+
+build:
+	$(COMPOSE) -f $(YML_FILE) build
+
+logs:
+	$(COMPOSE) -f $(YML_FILE) logs -f
+
+ps:
+	$(COMPOSE) -f $(YML_FILE) ps
+
+clean:
+	$(MAKE) down
+	docker system prune -f
+
+# Servicios individuales
+lcp:
+	$(COMPOSE) -f $(YML_FILE) up --build lcp
+
+gym:
+	$(COMPOSE) -f $(YML_FILE) up --build gym
+
+cdp:
+	$(COMPOSE) -f $(YML_FILE) up --build cdp
+
+snp:
+	$(COMPOSE) -f $(YML_FILE) up --build snp
+
+entrenador:
+	$(COMPOSE) -f $(YML_FILE) up --build entrenador
+
+rabbit:
+	$(COMPOSE) -f $(YML_FILE) up --build rabbitmq
+

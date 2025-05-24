@@ -16,11 +16,12 @@ import (
 
 type LCP struct {
 	pb.UnimplementedComunicacionServer
-	mu           sync.RWMutex
-	entrenadores map[int32]*pb.Entrenador // ID -> Entrenador
-	torneos      map[int64]*pb.Torneo     // ID -> Torneo
-	combates     map[int64]*pb.Combate    // ID -> Combate
-	maxTorneos   int
+	mu             sync.RWMutex
+	entrenadores   map[int32]*pb.Entrenador
+	torneos        map[int64]*pb.Torneo
+	combates       map[int64]*pb.Combate
+	maxTorneos     int
+	gimnasioClient pb.ComunicacionClient
 }
 
 func NewLCP() *LCP {
@@ -30,6 +31,15 @@ func NewLCP() *LCP {
 		combates:     make(map[int64]*pb.Combate),
 		maxTorneos:   8,
 	}
+}
+
+// Conecta con el gimnasio remoto (simulado aquí en "localhost:50052")
+func (s *LCP) conectarAGimnasio() {
+	conn, err := grpc.Dial("localhost:50052", grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("Error conectando con el gimnasio: %v", err)
+	}
+	s.gimnasioClient = pb.NewComunicacionClient(conn)
 }
 
 func (s *LCP) EnviarEntrenadores(ctx context.Context, req *pb.ListaEntrenadores) (*pb.Respuesta, error) {
@@ -68,56 +78,46 @@ func (s *LCP) InscribirEntrenador(ctx context.Context, req *pb.InscribirRequest)
 		return nil, fmt.Errorf("torneo no encontrado")
 	}
 
-	entrenador := req.Entrenador
-	storedEntrenador, exists := s.entrenadores[entrenador.Id]
-	if !exists {
+	entrenador, ok := s.entrenadores[req.Entrenador.Id]
+	if !ok {
 		return nil, fmt.Errorf("entrenador no registrado")
 	}
 
-	// Validar estado del entrenador
-	switch storedEntrenador.Estado {
+	// Validación de estado
+	switch entrenador.Estado {
 	case "Expulsado":
-		return &pb.InscribirResponse{
-			Mensaje: "Entrenador expulsado permanentemente",
-			En:      storedEntrenador,
-		}, nil
+		log.Printf("[SNP] Entrenador %s expulsado - intento de inscripción", entrenador.Nombre)
+		return &pb.InscribirResponse{Mensaje: "Entrenador expulsado", En: entrenador}, nil
 	case "Suspendido":
-		if storedEntrenador.Suspension > 0 {
-			storedEntrenador.Suspension--
-			if storedEntrenador.Suspension == 0 {
-				storedEntrenador.Estado = "Activo"
+		if entrenador.Suspension > 0 {
+			entrenador.Suspension--
+			log.Printf("[SNP] Entrenador %s suspendido (%d torneos restantes)", entrenador.Nombre, entrenador.Suspension)
+			if entrenador.Suspension == 0 {
+				entrenador.Estado = "Activo"
 			}
-			return &pb.InscribirResponse{
-				Mensaje: fmt.Sprintf("Entrenador suspendido (%d torneos restantes)", storedEntrenador.Suspension),
-				En:      storedEntrenador,
-			}, nil
+			return &pb.InscribirResponse{Mensaje: fmt.Sprintf("Suspendido (%d torneos restantes)", entrenador.Suspension), En: entrenador}, nil
 		}
 	}
 
-	// Verificar si ya está inscrito
+	// Ya inscrito
 	for _, e := range torneo.Jugadores {
 		if e.Id == entrenador.Id {
-			return &pb.InscribirResponse{
-				Mensaje: "Ya estás inscrito en este torneo",
-				En:      entrenador,
-			}, nil
+			return &pb.InscribirResponse{Mensaje: "Ya estás inscrito", En: entrenador}, nil
 		}
 	}
 
-	// Inscribir al torneo
+	// Inscripción
 	torneo.Jugadores = append(torneo.Jugadores, entrenador)
 	torneo.Inscritos++
 
-	// Si el torneo está lleno, asignar combate
+	log.Printf("[SNP] Confirmación de inscripción: %s al torneo %d", entrenador.Nombre, torneo.IdTorneo)
+
 	if torneo.Inscritos >= 2 {
 		torneo.Estado = "En curso"
 		go s.asignarCombate(torneo)
 	}
 
-	return &pb.InscribirResponse{
-		Mensaje: "Inscripción exitosa",
-		En:      entrenador,
-	}, nil
+	return &pb.InscribirResponse{Mensaje: "Inscripción exitosa", En: entrenador}, nil
 }
 
 func (s *LCP) asignarCombate(torneo *pb.Torneo) {
@@ -128,7 +128,6 @@ func (s *LCP) asignarCombate(torneo *pb.Torneo) {
 		return
 	}
 
-	// Crear combate
 	combateID := time.Now().UnixNano()
 	combate := &pb.Combate{
 		IdCombate:   combateID,
@@ -137,12 +136,17 @@ func (s *LCP) asignarCombate(torneo *pb.Torneo) {
 		Entrenador2: torneo.Jugadores[1],
 	}
 
-	// Aquí deberías implementar la llamada gRPC al gimnasio de la región
-	// Por ejemplo: gimnasioClient.AsignarCombate(context.Background(), combate)
-
 	s.combates[combateID] = combate
-	log.Printf("Combate asignado en %s entre %s y %s",
-		torneo.Region, torneo.Jugadores[0].Nombre, torneo.Jugadores[1].Nombre)
+
+	// Enviar al gimnasio
+	if s.gimnasioClient != nil {
+		_, err := s.gimnasioClient.AsignarCombate(context.Background(), combate)
+		if err != nil {
+			log.Printf("Error al enviar combate al gimnasio: %v", err)
+		} else {
+			log.Printf("Combate asignado a gimnasio: %s vs %s (ID %d)", combate.Entrenador1.Nombre, combate.Entrenador2.Nombre, combateID)
+		}
+	}
 }
 
 func (s *LCP) generarTorneos() {
@@ -173,18 +177,19 @@ func main() {
 
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Fatalf("No se pudo escuchar: %v", err)
 	}
 
 	lcp := NewLCP()
+	lcp.conectarAGimnasio() // <-- Conexión gRPC al gimnasio
 
 	go lcp.generarTorneos()
 
 	s := grpc.NewServer()
 	pb.RegisterComunicacionServer(s, lcp)
 
-	log.Printf("LCP escuchando en %v", lis.Addr())
+	log.Printf("Servidor LCP listo en %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+		log.Fatalf("Fallo al servir: %v", err)
 	}
 }

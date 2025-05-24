@@ -80,6 +80,10 @@ service Comunicacion{
     rpc InscribirEntrenador(InscribirRequest) returns (InscribirResponse);
     rpc AsignarCombate(Combate) returns (Respuesta);
     rpc ConsultarEntrenador(EntrenadorID) returns (Entrenador);
+    rpc actualizarRanking(EntrenadorID) returns (Respuesta);
 }
 
 message empty{}
+
+
+// agregado lo de ActualizarRanking

@@ -1,0 +1,79 @@
+version: '3.9'
+
+services:
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - poke-net
+
+  lcp:
+    build: ./lcp
+    ports:
+      - "50051:50051"
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      - rabbitmq
+    networks:
+      - poke-net
+
+  gym:
+    build: ./gym
+    ports:
+      - "50052:50052"
+    environment:
+      - REGION=Kanto
+      - CLAVE_AES=12345678901234567890123456789012
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      - rabbitmq
+    networks:
+      - poke-net
+
+  cdp:
+    build: ./cdp
+    ports:
+      - "50053:50053"
+    environment:
+      - CLAVE_AES=12345678901234567890123456789012
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - LCP_ADDR=lcp:50051
+    depends_on:
+      - rabbitmq
+      - lcp
+    networks:
+      - poke-net
+
+  snp:
+    build: ./snp
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - LCP_ADDR=lcp:50051
+    depends_on:
+      - rabbitmq
+      - lcp
+    networks:
+      - poke-net
+
+  entrenador:
+    build: ./entrenador
+    stdin_open: true
+    tty: true
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - LCP_ADDR=lcp:50051
+    depends_on:
+      - rabbitmq
+      - lcp
+    networks:
+      - poke-net
+
+networks:
+  poke-net:
